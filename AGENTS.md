@@ -30,4 +30,9 @@ is idempotent.
   nested substates (`AppState` → `MainMenu` → `SettingsTab`). Each state
   spawns its screen on enter and despawns it on exit via tagged marker
   components.
+- `src/io/` — PLC/IOServer ingestion layer: `source.rs` defines the
+  `IoSource` trait and tag types; `simulated.rs` fabricates tag values for
+  testing; `mod.rs` hosts `IoPlugin`, which owns the I/O thread, a
+  channel-drained `IoTagStore`, and the throttled UI refresh. Real backends
+  implement `IoSource` and replace the simulated one in `main.rs`.
 - UI only; no game logic.
