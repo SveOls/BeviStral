@@ -1,7 +1,13 @@
 use bevy::prelude::*;
 
+mod io;
+
+use io::simulated;
+use io::{BindTag, IoPlugin, TagId};
+
 fn main() {
     App::new()
+        .add_plugins(IoPlugin::new(simulated::SimulatedSource::default()))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "BeviStral".to_string(),
@@ -19,6 +25,8 @@ fn main() {
         .add_systems(OnExit(MainMenu::Root), despawn_screen::<OnMainMenuRootScreen>)
         .add_systems(OnEnter(MainMenu::Settings), spawn_settings_menu)
         .add_systems(OnExit(MainMenu::Settings), despawn_screen::<OnSettingsScreen>)
+        .add_systems(OnEnter(MainMenu::LiveData), spawn_live_data)
+        .add_systems(OnExit(MainMenu::LiveData), despawn_screen::<OnLiveDataScreen>)
         .add_systems(OnEnter(SettingsTab::Audio), spawn_audio_panel)
         .add_systems(OnExit(SettingsTab::Audio), despawn_screen::<OnAudioPanelScreen>)
         .add_systems(OnEnter(SettingsTab::Video), spawn_video_panel)
@@ -35,7 +43,15 @@ fn main() {
         )
         .add_systems(
             Update,
+            live_data_button_handler.run_if(in_state(MainMenu::LiveData)),
+        )
+        .add_systems(
+            Update,
             back_key_handler.run_if(in_state(MainMenu::Settings)),
+        )
+        .add_systems(
+            Update,
+            live_data_back_key_handler.run_if(in_state(MainMenu::LiveData)),
         )
         .run();
 }
@@ -52,6 +68,7 @@ pub enum MainMenu {
     #[default]
     Root,
     Settings,
+    LiveData,
 }
 
 #[derive(SubStates, Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
@@ -73,6 +90,9 @@ struct OnMainMenuRootScreen;
 struct OnSettingsScreen;
 
 #[derive(Component)]
+struct OnLiveDataScreen;
+
+#[derive(Component)]
 struct OnAudioPanelScreen;
 
 #[derive(Component)]
@@ -84,6 +104,7 @@ struct OnControlsPanelScreen;
 #[derive(Component, Clone, Copy)]
 enum MainMenuButton {
     Settings,
+    LiveData,
     Quit,
 }
 
@@ -197,6 +218,7 @@ fn spawn_main_menu_root(mut commands: Commands) {
                 })
                 .with_children(|column| {
                     spawn_button(column, "Settings", MainMenuButton::Settings);
+                    spawn_button(column, "Live Data", MainMenuButton::LiveData);
                     spawn_button(column, "Quit", MainMenuButton::Quit);
                 });
         });
@@ -291,6 +313,61 @@ fn spawn_controls_panel(mut commands: Commands) {
         });
 }
 
+fn spawn_live_data(mut commands: Commands) {
+    commands
+        .spawn((
+            panel_node(),
+            BackgroundColor(Color::srgb(0.07, 0.08, 0.11)),
+            OnLiveDataScreen,
+        ))
+        .with_children(|parent| {
+            spawn_title(parent, "Live Data");
+            spawn_tag_label(
+                parent,
+                "Line 1 speed",
+                simulated::TAG_LINE1_SPEED,
+            );
+            spawn_tag_label(
+                parent,
+                "Line 1 temperature",
+                simulated::TAG_LINE1_TEMP,
+            );
+            spawn_tag_label(parent, "Line 2 parts", simulated::TAG_LINE2_COUNT);
+            spawn_tag_label(parent, "Tank level", simulated::TAG_TANK_LEVEL);
+            spawn_tag_label(parent, "Pump", simulated::TAG_PUMP_RUNNING);
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    margin: UiRect::top(Val::Px(30.0)),
+                    ..default()
+                })
+                .with_children(|column| {
+                    spawn_button(column, "Back", BackButton);
+                });
+        });
+}
+
+fn spawn_tag_label(parent: &mut ChildSpawnerCommands, label: &str, tag: &str) {
+    parent.spawn((
+        Text::new(format!("{label}: …")),
+        TextFont {
+            font_size: FontSize::Px(22.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.75, 0.78, 0.85)),
+        Node {
+            margin: UiRect::top(Val::Px(10.0)),
+            ..default()
+        },
+        BindTag {
+            tag: TagId::new(tag),
+            label: label.to_string(),
+            last_display: None,
+        },
+    ));
+}
+
 fn main_menu_root_button_handler(
     interaction_query: Query<
         (&Interaction, &MainMenuButton),
@@ -304,6 +381,9 @@ fn main_menu_root_button_handler(
             match button {
                 MainMenuButton::Settings => {
                     next_state.set(MainMenu::Settings);
+                }
+                MainMenuButton::LiveData => {
+                    next_state.set(MainMenu::LiveData);
                 }
                 MainMenuButton::Quit => {
                     exit.write(AppExit::Success);
@@ -343,6 +423,29 @@ fn back_key_handler(
     state: Res<State<MainMenu>>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) && *state.get() == MainMenu::Settings {
+        next_state.set(MainMenu::Root);
+    }
+}
+
+fn live_data_button_handler(
+    back_query: Query<
+        &Interaction,
+        (Changed<Interaction>, With<BackButton>, With<Button>),
+    >,
+    mut next_menu: ResMut<NextState<MainMenu>>,
+) {
+    for interaction in &back_query {
+        if *interaction == Interaction::Pressed {
+            next_menu.set(MainMenu::Root);
+        }
+    }
+}
+
+fn live_data_back_key_handler(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut next_state: ResMut<NextState<MainMenu>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
         next_state.set(MainMenu::Root);
     }
 }
