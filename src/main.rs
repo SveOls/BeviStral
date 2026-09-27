@@ -10,43 +10,32 @@ fn main() {
             ..default()
         }))
         .init_state::<AppState>()
-        .add_sub_state::<GamePhase>()
-        .add_systems(Startup, setup_camera_and_background)
+        .add_sub_state::<MainMenu>()
+        .add_sub_state::<SettingsTab>()
+        .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(AppState::MainMenu), setup_main_menu)
         .add_systems(OnExit(AppState::MainMenu), despawn_screen::<OnMainMenuScreen>)
-        .add_systems(OnEnter(AppState::InGame), setup_game_screen)
-        .add_systems(OnExit(AppState::InGame), despawn_screen::<OnGameScreen>)
-        .add_systems(OnEnter(AppState::Paused), setup_pause_menu)
-        .add_systems(OnExit(AppState::Paused), despawn_screen::<OnPauseScreen>)
+        .add_systems(OnEnter(MainMenu::Root), spawn_main_menu_root)
+        .add_systems(OnExit(MainMenu::Root), despawn_screen::<OnMainMenuRootScreen>)
+        .add_systems(OnEnter(MainMenu::Settings), spawn_settings_menu)
+        .add_systems(OnExit(MainMenu::Settings), despawn_screen::<OnSettingsScreen>)
+        .add_systems(OnEnter(SettingsTab::Audio), spawn_audio_panel)
+        .add_systems(OnExit(SettingsTab::Audio), despawn_screen::<OnAudioPanelScreen>)
+        .add_systems(OnEnter(SettingsTab::Video), spawn_video_panel)
+        .add_systems(OnExit(SettingsTab::Video), despawn_screen::<OnVideoPanelScreen>)
+        .add_systems(OnEnter(SettingsTab::Controls), spawn_controls_panel)
+        .add_systems(OnExit(SettingsTab::Controls), despawn_screen::<OnControlsPanelScreen>)
         .add_systems(
             Update,
-            main_menu_button_handler.run_if(in_state(AppState::MainMenu)),
-        )
-        .add_systems(
-            Update,
-            pause_button_handler.run_if(in_state(AppState::InGame)),
-        )
-        .add_systems(
-            Update,
-            pause_menu_button_handler.run_if(in_state(AppState::Paused)),
+            main_menu_root_button_handler.run_if(in_state(MainMenu::Root)),
         )
         .add_systems(
             Update,
-            pause_key_handler.run_if(in_state(AppState::InGame)),
+            settings_button_handler.run_if(in_state(MainMenu::Settings)),
         )
         .add_systems(
-            OnTransition {
-                exited: AppState::MainMenu,
-                entered: AppState::InGame,
-            },
-            transition_to_game,
-        )
-        .add_systems(
-            OnTransition {
-                exited: AppState::InGame,
-                entered: AppState::MainMenu,
-            },
-            transition_to_menu,
+            Update,
+            back_key_handler.run_if(in_state(MainMenu::Settings)),
         )
         .run();
 }
@@ -55,52 +44,56 @@ fn main() {
 pub enum AppState {
     #[default]
     MainMenu,
-    InGame,
-    Paused,
 }
 
 #[derive(SubStates, Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
-#[source(AppState = AppState::InGame)]
-pub enum GamePhase {
+#[source(AppState = AppState::MainMenu)]
+pub enum MainMenu {
     #[default]
-    Day,
-    Night,
+    Root,
+    Settings,
 }
 
-#[derive(States, Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
-pub enum MenuTab {
+#[derive(SubStates, Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
+#[source(MainMenu = MainMenu::Settings)]
+pub enum SettingsTab {
     #[default]
-    Play,
-    Settings,
-    Credits,
+    Audio,
+    Video,
+    Controls,
 }
 
 #[derive(Component)]
 struct OnMainMenuScreen;
 
 #[derive(Component)]
-struct OnGameScreen;
+struct OnMainMenuRootScreen;
 
 #[derive(Component)]
-struct OnPauseScreen;
+struct OnSettingsScreen;
 
-#[derive(Component, Clone, Copy, PartialEq, Eq)]
-enum MenuButton {
-    Play,
+#[derive(Component)]
+struct OnAudioPanelScreen;
+
+#[derive(Component)]
+struct OnVideoPanelScreen;
+
+#[derive(Component)]
+struct OnControlsPanelScreen;
+
+#[derive(Component, Clone, Copy)]
+enum MainMenuButton {
     Settings,
-    Credits,
+    Quit,
 }
 
-#[derive(Component)]
-struct PauseButton;
+#[derive(Component, Clone, Copy)]
+struct SettingsTabButton(SettingsTab);
 
 #[derive(Component)]
-struct ResumeButton;
+struct BackButton;
 
-#[derive(Component)]
-struct QuitToMenuButton;
-
-fn setup_camera_and_background(mut commands: Commands) {
+fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
@@ -123,6 +116,7 @@ fn spawn_button(parent: &mut ChildSpawnerCommands, text: &str, marker: impl Comp
             },
             BackgroundColor(Color::srgb(0.17, 0.19, 0.24)),
             Button,
+            Interaction::default(),
         ))
         .insert(marker)
         .with_children(|button| {
@@ -137,87 +131,98 @@ fn spawn_button(parent: &mut ChildSpawnerCommands, text: &str, marker: impl Comp
         });
 }
 
+fn spawn_label(parent: &mut ChildSpawnerCommands, text: &str) {
+    parent.spawn((
+        Text::new(text),
+        TextFont {
+            font_size: FontSize::Px(22.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.75, 0.78, 0.85)),
+        Node {
+            margin: UiRect::top(Val::Px(10.0)),
+            ..default()
+        },
+    ));
+}
+
+fn spawn_title(parent: &mut ChildSpawnerCommands, text: &str) {
+    parent.spawn((
+        Text::new(text),
+        TextFont {
+            font_size: FontSize::Px(48.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.9, 0.9, 0.95)),
+    ));
+}
+
+fn panel_node() -> Node {
+    Node {
+        width: Val::Percent(100.0),
+        height: Val::Percent(100.0),
+        flex_direction: FlexDirection::Column,
+        align_items: AlignItems::Center,
+        justify_content: JustifyContent::Center,
+        ..default()
+    }
+}
+
 fn setup_main_menu(mut commands: Commands) {
     commands
         .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
+            panel_node(),
             BackgroundColor(Color::srgb(0.05, 0.06, 0.08)),
             OnMainMenuScreen,
         ))
         .with_children(|parent| {
-            parent.spawn((
-                Text::new("BeviStral"),
-                TextFont {
-                    font_size: FontSize::Px(64.0),
-                    ..default()
-                },
-                TextColor(Color::srgb(0.9, 0.9, 0.95)),
-            ));
+            spawn_title(parent, "BeviStral");
+        });
+}
 
+fn spawn_main_menu_root(mut commands: Commands) {
+    commands
+        .spawn((
+            panel_node(),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+            OnMainMenuRootScreen,
+        ))
+        .with_children(|parent| {
             parent
                 .spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::Center,
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
                     margin: UiRect::top(Val::Px(40.0)),
                     ..default()
                 })
-                .with_children(|row| {
-                    spawn_button(row, "Play", MenuButton::Play);
-                    spawn_button(row, "Settings", MenuButton::Settings);
-                    spawn_button(row, "Credits", MenuButton::Credits);
+                .with_children(|column| {
+                    spawn_button(column, "Settings", MainMenuButton::Settings);
+                    spawn_button(column, "Quit", MainMenuButton::Quit);
                 });
         });
 }
 
-fn setup_game_screen(mut commands: Commands) {
+fn spawn_settings_menu(mut commands: Commands) {
     commands
         .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::FlexStart,
-                justify_content: JustifyContent::FlexEnd,
-                ..default()
-            },
-            OnGameScreen,
+            panel_node(),
+            BackgroundColor(Color::srgb(0.07, 0.08, 0.11)),
+            OnSettingsScreen,
         ))
         .with_children(|parent| {
-            spawn_button(parent, "Pause", PauseButton);
-        });
-}
-
-fn setup_pause_menu(mut commands: Commands) {
-    commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
-            OnPauseScreen,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new("Paused"),
-                TextFont {
-                    font_size: FontSize::Px(48.0),
+            spawn_title(parent, "Settings");
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::Center,
+                    margin: UiRect::top(Val::Px(30.0)),
                     ..default()
-                },
-                TextColor(Color::srgb(0.9, 0.9, 0.95)),
-            ));
-
+                })
+                .with_children(|row| {
+                    spawn_button(row, "Audio", SettingsTabButton(SettingsTab::Audio));
+                    spawn_button(row, "Video", SettingsTabButton(SettingsTab::Video));
+                    spawn_button(row, "Controls", SettingsTabButton(SettingsTab::Controls));
+                });
             parent
                 .spawn(Node {
                     flex_direction: FlexDirection::Column,
@@ -225,81 +230,119 @@ fn setup_pause_menu(mut commands: Commands) {
                     margin: UiRect::top(Val::Px(30.0)),
                     ..default()
                 })
-                .with_children(|column| {
-                    spawn_button(column, "Resume", ResumeButton);
-                    spawn_button(column, "Quit to Menu", QuitToMenuButton);
+                .with_children(|content| {
+                    content
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::all(Val::Px(16.0)),
+                            border_radius: BorderRadius::all(Val::Px(6.0)),
+                            ..default()
+                        })
+                        .insert(BackgroundColor(Color::srgb(0.1, 0.11, 0.15)))
+                        .with_children(|panel| {
+                            spawn_button(panel, "Back", BackButton);
+                        });
                 });
         });
 }
 
-fn main_menu_button_handler(
+fn spawn_audio_panel(mut commands: Commands) {
+    commands
+        .spawn((
+            panel_node(),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+            OnAudioPanelScreen,
+        ))
+        .with_children(|parent| {
+            spawn_title(parent, "Audio");
+            spawn_label(parent, "Master volume: 80%");
+            spawn_label(parent, "Music volume: 60%");
+            spawn_label(parent, "SFX volume: 75%");
+        });
+}
+
+fn spawn_video_panel(mut commands: Commands) {
+    commands
+        .spawn((
+            panel_node(),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+            OnVideoPanelScreen,
+        ))
+        .with_children(|parent| {
+            spawn_title(parent, "Video");
+            spawn_label(parent, "Resolution: 1920x1080");
+            spawn_label(parent, "VSync: On");
+            spawn_label(parent, "UI scale: 100%");
+        });
+}
+
+fn spawn_controls_panel(mut commands: Commands) {
+    commands
+        .spawn((
+            panel_node(),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+            OnControlsPanelScreen,
+        ))
+        .with_children(|parent| {
+            spawn_title(parent, "Controls");
+            spawn_label(parent, "Escape: back");
+            spawn_label(parent, "Enter / Space: activate button");
+        });
+}
+
+fn main_menu_root_button_handler(
     interaction_query: Query<
-        (&Interaction, &MenuButton),
+        (&Interaction, &MainMenuButton),
         (Changed<Interaction>, With<Button>),
     >,
-    mut next_state: ResMut<NextState<AppState>>,
+    mut next_state: ResMut<NextState<MainMenu>>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     for (interaction, button) in &interaction_query {
         if *interaction == Interaction::Pressed {
             match button {
-                MenuButton::Play => next_state.set(AppState::InGame),
-                MenuButton::Settings => {}
-                MenuButton::Credits => {}
+                MainMenuButton::Settings => {
+                    next_state.set(MainMenu::Settings);
+                }
+                MainMenuButton::Quit => {
+                    exit.write(AppExit::Success);
+                }
             }
         }
     }
 }
 
-fn pause_button_handler(
-    interaction_query: Query<
-        &Interaction,
-        (Changed<Interaction>, With<PauseButton>, With<Button>),
+fn settings_button_handler(
+    tab_query: Query<
+        (&Interaction, &SettingsTabButton),
+        (Changed<Interaction>, With<Button>),
     >,
-    mut next_state: ResMut<NextState<AppState>>,
+    back_query: Query<
+        &Interaction,
+        (Changed<Interaction>, With<BackButton>, With<Button>),
+    >,
+    mut next_tab: ResMut<NextState<SettingsTab>>,
+    mut next_menu: ResMut<NextState<MainMenu>>,
 ) {
-    for interaction in &interaction_query {
+    for (interaction, button) in &tab_query {
         if *interaction == Interaction::Pressed {
-            next_state.set(AppState::Paused);
+            next_tab.set(button.0);
+        }
+    }
+    for interaction in &back_query {
+        if *interaction == Interaction::Pressed {
+            next_menu.set(MainMenu::Root);
         }
     }
 }
 
-fn pause_menu_button_handler(
-    resume_query: Query<
-        &Interaction,
-        (Changed<Interaction>, With<ResumeButton>, With<Button>),
-    >,
-    quit_query: Query<
-        &Interaction,
-        (Changed<Interaction>, With<QuitToMenuButton>, With<Button>),
-    >,
-    mut next_state: ResMut<NextState<AppState>>,
-) {
-    for interaction in &resume_query {
-        if *interaction == Interaction::Pressed {
-            next_state.set(AppState::InGame);
-        }
-    }
-    for interaction in &quit_query {
-        if *interaction == Interaction::Pressed {
-            next_state.set(AppState::MainMenu);
-        }
-    }
-}
-
-fn pause_key_handler(
+fn back_key_handler(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut next_state: ResMut<NextState<AppState>>,
+    mut next_state: ResMut<NextState<MainMenu>>,
+    state: Res<State<MainMenu>>,
 ) {
-    if keyboard.just_pressed(KeyCode::Escape) {
-        next_state.set(AppState::Paused);
+    if keyboard.just_pressed(KeyCode::Escape) && *state.get() == MainMenu::Settings {
+        next_state.set(MainMenu::Root);
     }
-}
-
-fn transition_to_game() {
-    info!("Entering InGame; GamePhase substate activates");
-}
-
-fn transition_to_menu() {
-    info!("Returning to MainMenu");
 }
